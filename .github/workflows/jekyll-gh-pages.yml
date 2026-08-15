@@ -1,5 +1,4 @@
-# Build and deploy the LMS Jekyll site to GitHub Pages
-name: Deploy Jekyll with GitHub Pages dependencies preinstalled
+name: Deploy LMS static site to GitHub Pages
 
 on:
   push:
@@ -21,37 +20,64 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./
-          destination: ./_site
-      - name: Enforce Academy global shell on every generated HTML page
+
+      - name: Stage static LMS site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site
+          rsync -a ./ _site/ \
+            --exclude='_site/' \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='**/node_modules/'
+          if [ ! -f _site/index.html ] && [ -f _site/azure_learning_roadmap.html ]; then
+            cp _site/azure_learning_roadmap.html _site/index.html
+          fi
+          touch _site/.nojekyll
+          test -s _site/index.html
+
+      - name: Enforce Academy global shell on every published HTML page
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
+
           current = 'https://skunkworksacademy.com/assets/academy-navigation.js?v=2026.08.15.2'
           loader = f'<script defer src="{current}" data-skunkworks-global-shell="2026.08.15.2"></script>'
+          script_pattern = re.compile(
+              r'<script\b[^>]*\bsrc=["\'][^"\']*academy-navigation\.js[^"\']*["\'][^>]*>\s*</script>',
+              re.IGNORECASE,
+          )
           pages = list(Path('_site').rglob('*.html'))
+          if not pages:
+              raise SystemExit('LMS staging produced no HTML pages.')
+
           for path in pages:
               html = path.read_text(encoding='utf-8', errors='ignore')
-              if 'academy-navigation.js' in html:
-                  html = re.sub(r'https://skunkworksacademy\.com/assets/academy-navigation\.js(?:\?v=[^"\'\s<>]+)?', current, html)
-              elif '</head>' in html:
+              html = script_pattern.sub('', html)
+              if '</head>' in html:
                   html = html.replace('</head>', f'{loader}</head>', 1)
               elif '</body>' in html:
                   html = html.replace('</body>', f'{loader}</body>', 1)
               else:
                   raise SystemExit(f'Cannot inject Academy global shell into {path}')
               path.write_text(html, encoding='utf-8')
-          missing = [str(p) for p in pages if current not in p.read_text(encoding='utf-8', errors='ignore')]
+
+          missing = [
+              str(path)
+              for path in pages
+              if current not in path.read_text(encoding='utf-8', errors='ignore')
+          ]
           if missing:
               raise SystemExit('Global shell missing from: ' + ', '.join(missing))
-          print(f'Verified Academy global shell on {len(pages)} generated page(s).')
+          print(f'Verified Academy global shell on {len(pages)} LMS page(s).')
           PY
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
