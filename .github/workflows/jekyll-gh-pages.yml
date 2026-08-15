@@ -1,28 +1,21 @@
-# Sample workflow for building and deploying a Jekyll site to GitHub Pages
+# Build and deploy the LMS Jekyll site to GitHub Pages
 name: Deploy Jekyll with GitHub Pages dependencies preinstalled
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  # Build job
   build:
     runs-on: ubuntu-latest
     steps:
@@ -35,10 +28,35 @@ jobs:
         with:
           source: ./
           destination: ./_site
+      - name: Enforce Academy global shell on every generated HTML page
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          current = 'https://skunkworksacademy.com/assets/academy-navigation.js?v=2026.08.15.2'
+          loader = f'<script defer src="{current}" data-skunkworks-global-shell="2026.08.15.2"></script>'
+          pages = list(Path('_site').rglob('*.html'))
+          for path in pages:
+              html = path.read_text(encoding='utf-8', errors='ignore')
+              if 'academy-navigation.js' in html:
+                  html = re.sub(r'https://skunkworksacademy\.com/assets/academy-navigation\.js(?:\?v=[^"\'\s<>]+)?', current, html)
+              elif '</head>' in html:
+                  html = html.replace('</head>', f'{loader}</head>', 1)
+              elif '</body>' in html:
+                  html = html.replace('</body>', f'{loader}</body>', 1)
+              else:
+                  raise SystemExit(f'Cannot inject Academy global shell into {path}')
+              path.write_text(html, encoding='utf-8')
+          missing = [str(p) for p in pages if current not in p.read_text(encoding='utf-8', errors='ignore')]
+          if missing:
+              raise SystemExit('Global shell missing from: ' + ', '.join(missing))
+          print(f'Verified Academy global shell on {len(pages)} generated page(s).')
+          PY
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
 
-  # Deployment job
   deploy:
     environment:
       name: github-pages
