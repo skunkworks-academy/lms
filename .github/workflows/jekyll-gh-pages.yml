@@ -44,10 +44,11 @@ jobs:
           from pathlib import Path
           import re
 
-          current = 'https://skunkworksacademy.com/assets/academy-navigation.js?v=2026.08.15.2'
-          loader = f'<script defer src="{current}" data-skunkworks-global-shell="2026.08.15.2"></script>'
-          script_pattern = re.compile(
-              r'<script\b[^>]*\bsrc=["\'][^"\']*academy-navigation\.js[^"\']*["\'][^>]*>\s*</script>',
+          current = 'https://skunkworksacademy.com/assets/academy-navigation.js?v=2026.08.15.1'
+          marker = 'data-skunkworks-global-nav="v10"'
+          loader = f'<script defer src="{current}" {marker}></script>'
+          old_tags = re.compile(
+              r'<script\b[^>]*(?:academy-navigation\.js|academy-navigation-loader\.js|data-skunkworks-global-nav|data-skunkworks-global-shell)[^>]*>\s*</script>',
               re.IGNORECASE,
           )
           pages = list(Path('_site').rglob('*.html'))
@@ -56,23 +57,28 @@ jobs:
 
           for path in pages:
               html = path.read_text(encoding='utf-8', errors='ignore')
-              html = script_pattern.sub('', html)
-              if '</head>' in html:
-                  html = html.replace('</head>', f'{loader}</head>', 1)
-              elif '</body>' in html:
-                  html = html.replace('</body>', f'{loader}</body>', 1)
+              html = old_tags.sub('', html)
+              if re.search(r'</head\s*>', html, re.I):
+                  html = re.sub(r'</head\s*>', f'{loader}</head>', html, count=1, flags=re.I)
+              elif re.search(r'</body\s*>', html, re.I):
+                  html = re.sub(r'</body\s*>', f'{loader}</body>', html, count=1, flags=re.I)
               else:
                   raise SystemExit(f'Cannot inject Academy global shell into {path}')
               path.write_text(html, encoding='utf-8')
 
-          missing = [
-              str(path)
-              for path in pages
-              if current not in path.read_text(encoding='utf-8', errors='ignore')
-          ]
+          missing = []
+          duplicate = []
+          for path in pages:
+              html = path.read_text(encoding='utf-8', errors='ignore')
+              if current not in html or marker not in html:
+                  missing.append(str(path))
+              if html.count('academy-navigation.js') > 1:
+                  duplicate.append(str(path))
           if missing:
               raise SystemExit('Global shell missing from: ' + ', '.join(missing))
-          print(f'Verified Academy global shell on {len(pages)} LMS page(s).')
+          if duplicate:
+              raise SystemExit('Duplicate global shell loaders in: ' + ', '.join(duplicate))
+          print(f'Verified Academy canonical v10 shell on {len(pages)} LMS page(s).')
           PY
 
       - name: Setup Pages
