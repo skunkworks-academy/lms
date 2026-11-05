@@ -85,7 +85,7 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Install and verify Academy search favicons
-        uses: skunkworks-academy/www/.github/actions/search-favicons@070f621875577a66ae43cdffa7e9d20c65efdc71
+        uses: skunkworks-academy/www/.github/actions/search-favicons@67c4ab0d8f7c5dca50d54b8dad24174b0e41a39a
         with:
           artifact-path: "./_site"
       - name: Upload artifact
